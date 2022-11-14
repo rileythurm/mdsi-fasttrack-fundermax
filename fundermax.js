@@ -1,3 +1,14 @@
+/* 11-13-22 notes
+ * Changes regarding two sheet quantity fields (sheets-input-...)
+ * Rearrange loop in calculateAll for cleanness
+ * moved finishPrice into recordObject and expanded into gr and xl
+ * Add getSolidOrWood to take input of color number (0085, etc.) and return solid or woodgrain
+ * dimensionError now grabs size before it displays so it gives the right dimensions
+ * Replaced all getSeries calls to using sheetPrice and sheetSize objects
+ * Some resetting functions were called in only one place. Moved those into addEventListener
+ * Put back in lines from calculate() setting rivet related variables since these actually inform the screws and tufs
+*/
+
 /* 11-11-22 notes
  * Moved add event listener block for size toggles since it will now be specific to each panel profile
  * Added size attribute to tabs in recordObject. 0 = GR, 1 = XL
@@ -8,6 +19,9 @@
  * Copied over the equitone file and made obvious changes
 */
 
+
+//TODO add finishes into FINISH wildcards in ids in webflow
+
 window.addEventListener('load', () => {
     accessoryIds = [
         {
@@ -17,7 +31,7 @@ window.addEventListener('load', () => {
             displayName: g('cf-horiz-rail-display-name').innerText,
             price: parseFloat(g('cf-horiz-rail-price').innerText),
             'CF': true,
-            'EF - Wood': false,
+            'EF': false,
         },
         {
             id: 'cf-clip',
@@ -26,7 +40,7 @@ window.addEventListener('load', () => {
             displayName: g('cf-clip-display-name').innerText,
             price: parseFloat(g('cf-clip-price').innerText),
             'CF': true,
-            'EF - Wood': false,
+            'EF': false,
         },
         {
             id: 'alum-hat-ext',
@@ -35,7 +49,7 @@ window.addEventListener('load', () => {
             displayName: g('alum-hat-ext-display-name').innerText,
             price: parseFloat(g('alum-hat-ext-price').innerText),
             'CF': false,
-            'EF - Wood': false,
+            'EF': true,
         },
         {
             id: 'alum-zee-ext',
@@ -44,7 +58,7 @@ window.addEventListener('load', () => {
             displayName: g('alum-zee-ext-display-name').innerText,
             price: parseFloat(g('alum-zee-ext-price').innerText),
             'CF': false,
-            'EF - Wood': false,
+            'EF': true,
         },
         {
             id: 'tuf-s-concealed-fastener',
@@ -53,10 +67,10 @@ window.addEventListener('load', () => {
             displayName: g('tuf-s-concealed-fastener-display-name').innerText,
             price: parseFloat(g('tuf-s-concealed-fastener-price').innerText),
             'CF': true,
-            'EF - Wood': false,
+            'EF': false,
         },
         
-        // TODO add these ids to the page and find out fastener boolean
+        // TODO add these ids to the page
         {
             id: '9mm-centralizing-tool',
             nounSingular: 'each',
@@ -64,7 +78,7 @@ window.addEventListener('load', () => {
             displayName: g('9mm-centralizing-tool-display-name').innerText,
             price: parseFloat(g('9mm-centralizing-tool-price').innerText),
             'CF': false,
-            'EF - Wood': false,
+            'EF': true,
         },
         {
             id: '5.6mm-carbide-drillbit',
@@ -73,7 +87,7 @@ window.addEventListener('load', () => {
             displayName: g('carbide-drillbit-display-name').innerText,
             price: parseFloat(g('carbide-drillbit-price').innerText),
             'CF': false,
-            'EF - Wood': false,
+            'EF': true,
         },
         {
             id: '9mm-carbide-drillbit',
@@ -82,7 +96,7 @@ window.addEventListener('load', () => {
             displayName: g('carbide-drillbit-display-name').innerText,
             price: parseFloat(g('carbide-drillbit-price').innerText),
             'CF': false,
-            'EF - Wood': false,
+            'EF': true,
         },
         {
             id: '4.5mm-drillbit',
@@ -91,7 +105,7 @@ window.addEventListener('load', () => {
             displayName: g('carbide-drillbit-display-name').innerText,
             price: parseFloat(g('carbide-drillbit-price').innerText),
             'CF': false,
-            'EF - Wood': false,
+            'EF': true,
         },
     ];
 
@@ -104,7 +118,6 @@ window.addEventListener('load', () => {
     }
 
     displayCheckoutPane();
-	// TODO make sure this is the actual name of the form
     document.querySelector('[data-name="FastTrack-Fundermax-Order"]').addEventListener('submit', formSubmit);
 
     g('previous-button').addEventListener('click', (event) => {
@@ -119,7 +132,7 @@ window.addEventListener('load', () => {
         displayCheckoutPane();
     });
 
-	// TODO add ids to trav's tab template
+	
     calculatorTabHTML = g('calculator-FINISH-TAB').outerHTML;
     g('calculator-FINISH-TAB').style.display = "none";
 
@@ -140,7 +153,7 @@ window.addEventListener('load', () => {
                 displayName: `Color-Matching Screws ${f}`,
                 price: parseFloat(g('screw-rivet-price').innerHTML),
                 'CF': false,
-                'EF - Wood': true,
+                'EF': true,
             }
         );
         // Populate recordObject
@@ -150,8 +163,10 @@ window.addEventListener('load', () => {
             // the first div is set to display flex and the others are none
             tabs: [],
             screws: 0,
-            sheetQty: 0,
-            finishSheetsPrice: 0,
+            finishSheetsPrices: {
+            	'gr': 0,
+            	'xl': 0,
+            }
             manualSheetQty: false,
         };
         for (let i = 0; i < maxVisibleTabs; i++) {
@@ -164,7 +179,7 @@ window.addEventListener('load', () => {
                 "horizOrient": 0, // 0 = false = vertical, 1 = true = horizontal
                 "solveForSqft": 0, // 0 = false, 1 = true
                 "grainVertical": 0 // 0 = false, 1 = true
-                "size": 0 // 0 = GR, 1 = XL; TODO make sure this reflects actual start position of checkbox
+                "size": 0 // 0 = GR, 1 = XL
             };
         }
         // Populate html of tabs
@@ -172,13 +187,12 @@ window.addEventListener('load', () => {
             g(`${f}-tab-${tab}`).innerHTML = createTab(f, tab);
             g(`grain-vertical-${f}-${tab}`).style.display = "none";
             g(`grain-horizontal-${f}-${tab}`).style.display = "block";
-         
-            //TODO update this to if SOLID
-            if (f[0] === 'N') {
+            if (getSolidOrWood(f) == 'solid') {
                 g(`grain-toggle-${f}-${tab}`).style.display = "none";
             }
         }
-
+        
+		// TODO update these ids in webflow
         // set click listeners
         g(`${f}-add-tab`).addEventListener('click', (event) => {
             addTab(finIndex);
@@ -187,15 +201,15 @@ window.addEventListener('load', () => {
             removeTab(finIndex);
         });
         
-        // TODO adjust this to accomodate two input fields for sheet quantity
+
         // allow manual changes to sheet count
-        g(`sheets-input-${f}`).addEventListener('input', (event) => {
-            recordObject[f].manualSheetQty = true;
-            g(`price-${f}`).innerText =
-                addCommas(getSeriesInfo(letterSeriesMap[f[0]], "price") * getValue(`sheets-input-${f}`));
-            recordObject[f].finishSheetsPrice =
-                getSeriesInfo(letterSeriesMap[f[0]], "price") * getValue(`sheets-input-${f}`);
-            calculateAll();
+        g(`gr-sheets-input-${f}`).addEventListener('input', (event) => {
+        	enterManualSheetCount(f);
+            
+        });
+        // allow manual changes to sheet count contd.
+        g(`xl-sheets-input-${f}`).addEventListener('input', (event) => {
+            enterManualSheetCount(f);
         });
     }
 
@@ -248,10 +262,24 @@ window.addEventListener('load', () => {
 
     let exitButtons = document.getElementsByClassName('x-quantity-selection');
     for (let i = 0; i < exitButtons.length; i++) {
-        let id = exitButtons[i].id.substring(0, 4); // TODO adapt this to fundermax. 0, 4 substring was specific to LT20 etc.
+        let id = exitButtons[i].id.substring(0, 4); // This grabs the four digit finish number
         exitButtons[i].addEventListener('click', (event) => {
-            resetFinishTab(id);
-            resetScrewAndRivetTab(id);
+            //reset finish tab
+            resetCalcTab(f, 1)
+    		g(`${f}-tab-1`).style.display = 'flex'; // Keep the first one visible
+    		for (let tab = 2; tab <= maxVisibleTabs; tab++) {
+        		g(`${f}-tab-${tab}`).style.display = 'none';
+        		resetCalcTab(f, tab);
+    		}
+    		recordObject[f].visibleTabs = 1;
+    		g(`gr-sheets-input-${f}`).value = "";
+    		g(`xl-sheets-input-${f}`).value = "";
+    		
+            // reset color-matching-screws fields
+            g(`cms-${f}-qty`).value = "";
+    		g(`cms-${f}-total`).innerText = "";
+    		g(`cms-${f}`).style.display = "none"; // travis will show these, I hide them
+    		
             calculateAll();
         });
     }
@@ -322,7 +350,6 @@ window.addEventListener('load', () => {
                 continue;
             }
             
-            // TODO build this out, add to tab template, etc. once trav has toggles made
     		// add listener to sheet size toggle GR-XL
     		if (inputs[i].id.startsWith('gr-xl-')) {
     		   inputs[i].addEventListener('input', (event) => {
@@ -332,7 +359,7 @@ window.addEventListener('load', () => {
     		       let finish = id.replace(pattern, "$1");
     		       let tab = id.replace(pattern, "$2");
     		       // Set size for this tab
-    		       recordObject[finish].tabs[tab - 1].size = inputs[i].checked ? 1 : 0;
+    		       recordObject[finish].tabs[tab - 1].size = inputs[i].checked ? 1 : 0; 
     		       // Hide and show the horizontal/vertical divs on the toggle
     		       g(`toggle-gr-${finish}-${tab}`).style.display =
     		           g(`toggle-gr-${finish}-${tab}`).style.display != "none" ? "none" : "block";
@@ -348,7 +375,7 @@ window.addEventListener('load', () => {
 
         } else if (inputs[i].name == 'Installation-System') {
             inputs[i].addEventListener('input', (event) => {
-                fastenerSystem = inputs[i].value // CF, EF - Wood
+                fastenerSystem = inputs[i].value // CF, EF
                 calculateAll();
             });
             
@@ -381,7 +408,7 @@ window.addEventListener('load', () => {
 let applyReccs = false;
 let manualChangeToAccessory = false;
 let formSubmitted = false;
-let fastenerSystem = "CF"; // TODO double check that we default to this for fundermax too
+let fastenerSystem = "EF"; 
 let activeCheckoutPane = 1; // 1 = Select Materials, 2 = Select Accessories, 3 = Customer Info, 4 = Summary
 let finishes = [];
 let globalAccessoriesCount = {};
@@ -390,35 +417,33 @@ let grandTotal = 0;
 const maxVisibleTabs = 5; // this needs to be the same as how many empty divs we have in our calculator embeds
 const maxCheckoutPane = 4; // this is tied to how many "steps" are in the order process, starting with Select Materials
 
-// TODO get sizes from CMS collection
+// TODO get sizes from CMS collection ?
 const sheetSizes = {
 	"gr": {
-		width: "110.25",
-		height: "51.1875",
+		width: "110",
+		height: "51",
 	},
 	"xl": {
-		width: "161.375",
+		width: "161",
 		height: "73",
 	}
 }
-// TODO get prices from CMS collection
+// TODO get prices from CMS collection ?
 const sheetPrices = {
-	"solids": {
+	"solid": {
 		"gr": 443,
 		"xl": 927
 	},
-	"woodgrains": {
+	"woodgrain": {
 		"gr": 465,
 		"xl": 974
 	}
 }
 
-const screwsOrRivetsPerBox = 500;
+const screwPerBox = 500;
 const hatExtrusionFeetPer = 10;
 const zeeExtrusionFeetPer = 10;
 const concealedHorizontalRailFeetPer = 12;
-
-//const screwSleevesPerBox = 500;
 const tufsFastenerPerBox = 500;
 let calculatorTabHTML = "";
 
@@ -428,15 +453,15 @@ let calculatorTabHTML = "";
 // 5 (maxVisibleTabs) objects with the properties "sheetPanelArea" etc. stored
 let recordObject = {};
 
-// TODO get rid of this and just use the series name
-let letterSeriesMap = {
-    'S': 'solid',
-    'W': 'woodgrain',
-}
-
 let fastenerMap = {
     'CF': 'Concealed Fasteners',
-    'EF - Wood': 'Exposed Fasteners - Wood'
+    'EF': 'Exposed Fasteners'
+}
+
+function getSolidOrWood(id) {
+	let woods = ['0803', '0027', '0161', '0932'];
+	let solids = ['0085', '0074', '0075', '0070'];
+	return woods.includes(id) ? 'woodgrain' : 'solid';
 }
 
 function g(id) {
@@ -447,11 +472,19 @@ function getValue(id) {
     return +document.getElementById(id).value;
 }
 
-//TODO maybe we go about this differently for fundermax
-function getSeriesInfo(key, attr) {
-    return parseFloat(g(`${key}-${attr}`).innerText);
+function enterManualSheetCount(f) {
+	recordObject[f].manualSheetQty = true;
+	let price = sheetPrices[getSolidOrWood(f)];
+    g(`subtotal-${f}`).innerText =
+        addCommas(sheetPrices[getSolidOrWood(f)]['gr'] * getValue(`gr-sheets-input-${f}`))
+        + 
+        addCommas(sheetPrices[getSolidOrWood(f)]['xl'] * getValue(`xl-sheets-input-${f}`));
+    recordObject[f].finishSheetsPrices['gr'] =
+        sheetPrices[getSolidOrWood(f)]['gr'] * getValue(`gr-sheets-input-${f}`);
+    recordObject[f].finishSheetsPrices['xl'] =
+        sheetPrices[getSolidOrWood(f)]['xl'] * getValue(`xl-sheets-input-${f}`);
+    calculateAll();
 }
-
 function displayCheckoutPane() {
     document.getElementsByClassName('checkout-container')[0].scrollTop = 0;
 
@@ -538,24 +571,22 @@ function resetCalcTab(f, tab) {
     // TODO add any new fundermax ones. GL vs XL, probably
     g(`sheets-recc-${f}-${tab}`).innerText = "";
     g(`yieldloss-${f}-${tab}`).innerText = "";
-    g(`price-${f}`).innerText = "";
+    g(`subtotal-${f}`).innerText = "";
     g(`width-${f}-${tab}`).value = "";
     g(`height-${f}-${tab}`).value = "";
     g(`sqft-${f}-${tab}`).value = "";
     g(`panel-count-${f}-${tab}`).value = "";
     g(`perim-edges-${f}-${tab}`).value = "";
 }
-function resetScrewAndRivetTab(f) {
-    g(`cms-${f}-qty`).value = "";
-    g(`cms-${f}-total`).innerText = "";
-    g(`cms-${f}`).style.display = "none"; // travis will show these, I hide them
-}
+
 
 function resetRecordObject() {
     // resets everything but visibleTabs
     for (let finIndex = 0; finIndex < finishes.length; finIndex++) {
         let f = finishes[finIndex];
         recordObject[f].screws = 0;
+        recordObject[f].finishSheetsPrices['gr'] = 0;
+        recordObject[f].finishSheetsPrices['xl'] = 0;
         for (let i = 0; i < recordObject[f].tabs.length; i++) {
             for (const key of Object.keys(recordObject[f].tabs[i])) {
                 // don't reset these three
@@ -566,24 +597,12 @@ function resetRecordObject() {
     }
 }
 
-function resetFinishTab(f) {
-
-    resetCalcTab(f, 1)
-    g(`${f}-tab-1`).style.display = 'flex';
-    for (let tab = 2; tab <= maxVisibleTabs; tab++) {
-        g(`${f}-tab-${tab}`).style.display = 'none';
-        resetCalcTab(f, tab);
-    }
-    recordObject[f].visibleTabs = 1;
-    g(`sheets-input-${f}`).value = "";
-}
-
 // TODO adjust this for fundermax tab
 function createTab(finish, tab) {
     let copy = calculatorTabHTML.replaceAll('FINISH', '' + finish + '')
     copy = copy.replaceAll('TAB', tab)
-    copy = copy.replaceAll('~HEIGHT~', getSeriesInfo(letterSeriesMap[finish[0]], 'height'))
-    copy = copy.replaceAll('~WIDTH~', getSeriesInfo(letterSeriesMap[finish[0]], 'width'))
+    copy = copy.replaceAll('~HEIGHT~', sheetSizes[getSolidOrWood(finish)]['gr'].height) 
+    copy = copy.replaceAll('~WIDTH~', sheetSizes[getSolidOrWood(finish)]['gr'].width)
     copy = copy.replaceAll('~1~', `<span id="sheets-recc-${finish}-${tab}">0</span>`)
     copy = copy.replaceAll('~2~', `<span id="panels-per-sheet-${finish}-${tab}">0</span>`)
     copy = copy.replaceAll('~3~', `<span id="yieldloss-${finish}-${tab}">0</span>%`)
@@ -596,11 +615,13 @@ function dimensionsError(f, tab) {
     g(`height-${f}-${tab}`).style.color = "#d40000";
     //console.log("in error check");
     g(`sheets-recc-${f}-${tab}`).innerText = 'Error';
+    let sizeString = recordObject[f].tabs[tab - 1].size == 1 ? 'xl' : 'gr';
+    g(`error-height-width-div`).innerText = `${sheetSizes[getSolidOrWood(finish)][sizeString].height}x${sheetSizes[getSolidOrWood(finish)][sizeString].height}`;
     g(`error-message-${f}-${tab}`).style.display = 'block';
     g(`yieldloss-${f}-${tab}`).innerText = "0";
     g(`panels-per-sheet-${f}-${tab}`).innerText = "0";
     //g(`panel-count-${f}-${tab}`).value = "0";
-    g(`price-${f}`).innerText = "0";
+    g(`subtotal-${f}`).innerText = "0";
 }
 
 function calculate(series, finIndex, tab) {
@@ -634,7 +655,7 @@ function calculate(series, finIndex, tab) {
         } else {
             g(`panel-count-${f}-${tab}`).value = "";
         }
-        g(`price-${f}`).innerText = "0";
+        g(`subtotal-${f}`).innerText = "0";
         /*
         for (const key of Object.keys(recordObject[f].tabs[tab - 1])) {
             recordObject[f].tabs[tab - 1][key] = 0;
@@ -648,10 +669,11 @@ function calculate(series, finIndex, tab) {
     }
 
     // width = long side, height = short side
-    // TODO adapt this to variable size GR vs XL
-    let sheetWidth = getSeriesInfo(series, "width");
-    let sheetHeight = getSeriesInfo(series, "height");
+    let sizeString = recordObject[f].tabs[tab - 1].size == 1 ? 'xl' : 'gr';
+    let sheetWidth = sheetSizes[sizeString].width;
+    let sheetHeight = sheetSizes[sizeString].height;
     let sheetArea = (sheetWidth * sheetHeight) / 144;
+    
 
     if (((panelWidth > sheetHeight) && (panelHeight > sheetHeight)) ||
         (panelWidth > sheetWidth) || (panelHeight > sheetWidth)) {
@@ -684,7 +706,6 @@ function calculate(series, finIndex, tab) {
                 totalPPS = SO_PPS_Width * SO_PPS_Height;
             }
             break;
-        // TODO make sure solid doesn't have grain
         case 'solid':
             // Pick the orientation that yields the most panels since grain direction is N/A
             // Standard Orientation Panels Per Sheet:
@@ -752,13 +773,16 @@ function calculate(series, finIndex, tab) {
     let zeeExtrusionFeet =
         (((Math.floor(((horizEdgeOfPanels - 2) / 24)) * vertEdgeOfPanels * quantPanels) +
             (panelEdgesPerimOrCorner * vertEdgeOfPanels)) / 12 * extraMultiplier)
-    //let totalQuantScrewSleeves = quantPanels * 2;
+    let hatQuantRivets = ((Math.ceil(vertEdgeOfPanels / 24) + 1) * quantPanels) * extraMultiplier;
+    let zeeQuantRivets =
+        ((Math.floor(((horizEdgeOfPanels - 2) / 24)) * quantPanels) + panelEdgesPerimOrCorner) * ((Math.ceil(vertEdgeOfPanels / 24)) + 1) * extraMultiplier;
+    let totalQuantRivets = hatQuantRivets + zeeQuantRivets;
    
     let concealedHorizontalRailFeet = (((Math.ceil((vertEdgeOfPanels / 16) + 1) * horizEdgeOfPanels) * quantPanels) / 12) * extraMultiplier;
     let concealedClips = (Math.ceil((horizEdgeOfPanels / 16) + 1) * Math.floor(vertEdgeOfPanels / 16)) * quantPanels;
     concealedClips += Math.ceil((horizEdgeOfPanels / 16) + 1) * quantPanels;
 
-    if (fastenerSystem === 'EF - Wood') {
+    if (fastenerSystem === 'EF') {
         recordObject[f].screws += totalQuantRivets;
     } else {
         // 'CF'
@@ -768,7 +792,6 @@ function calculate(series, finIndex, tab) {
     // Do this regardless of fastenerSystem
     globalAccessoriesCount.hatExtrusionFeet += hatExtrusionFeet;
     globalAccessoriesCount.zeeExtrusionFeet += zeeExtrusionFeet;
-	//globalAccessoriesCount.totalQuantScrewSleeves += totalQuantScrewSleeves;
 	globalAccessoriesCount.concealedHorizontalRailFeet += concealedHorizontalRailFeet;
     globalAccessoriesCount.concealedClips += concealedClips;
 }
@@ -796,21 +819,22 @@ function updateCart() {
     g('grand-total-display').innerText = "0";
     g('grand-total').value = "0";
     grandTotal = 0;
-
     // add sheets to cart total
     for (let finIndex = 0; finIndex < finishes.length; finIndex++) {
-        let f = finishes[finIndex];
-        if (getValue('sheets-input-' + f) >= 1) {
-            // create cart tab with qty and price
-            let noun = getValue('sheets-input-' + f) === 1 ? 'sheet' : 'sheets';
-            createCartItem(
-                "Fundermax " + f,
-                getValue('sheets-input-' + f),
-                noun,
-                recordObject[f].finishSheetsPrice
-            );
-            // update grand total
-            grandTotal += recordObject[f].finishSheetsPrice;
+    	let f = finishes[finIndex];
+    	for (const size in recordObject[f].finishSheetsPrices) {
+        	if (getValue(`${size}-sheets-input-${f}`) >= 1) {
+        	    // create cart tab with qty and price
+        	    let noun = getValue(`${size}-sheets-input-${f}`) === 1 ? 'sheet' : 'sheets';
+        	    createCartItem(
+        	    	`Fundermax ${f} ${size.toUpperCase()}`,
+        	        getValue(`${size}-sheets-input-${f}`),
+        	        noun,
+        	        recordObject[f].finishSheetsPrices[size]
+        	    );
+        	    // update grand total
+        	    grandTotal += recordObject[f].finishSheetsPrice;
+        	}
         }
     }
 
@@ -840,52 +864,58 @@ function calculateAll() {
     globalAccessoriesCount = {
         'hatExtrusionFeet': 0,
         'zeeExtrusionFeet': 0,
-        //'totalQuantScrewSleeves': 0,
         'concealedHorizontalRailFeet': 0,
         'concealedClips': 0,
         'tufsFastener': 0,
     };
     for (let finIndex = 0; finIndex < finishes.length; finIndex++) {
-        let finishPrice = 0;
+        //let finishPrice = 0;
         let f = finishes[finIndex];
         if (g(`${f}-quantity-selection`).style.display === 'none') continue;
-        if (!recordObject[f].manualSheetQty) g(`sheets-input-${f}`).value = 0;
-        let series = letterSeriesMap[f[0]]; // TODO moved this out of the following for loop. Double check that didn't break anything
-        for (let tab = 1; tab <= recordObject[f].visibleTabs; tab++) {
-            calculate(series, finIndex, tab);
-            if (recordObject[f].manualSheetQty) {
-                finishPrice = g(`sheets-input-${f}`).value * getSeriesInfo(letterSeriesMap[f[0]], "price");
-            } else {
-                let t = getValue(`sheets-input-${f}`);
-                t += recordObject[f].tabs[tab - 1].sheetCountEstimate;
-                g(`sheets-input-${f}`).value = t;
-                finishPrice += recordObject[f].tabs[tab - 1].sheetCountEstimate *
-                    getSeriesInfo(letterSeriesMap[f[0]], "price");
-            }
+        if (!recordObject[f].manualSheetQty) {
+        	g(`gr-sheets-input-${f}`).value = 0;
+        	g(`xl-sheets-input-${f}`).value = 0;
         }
-        g(`price-${f}`).innerText = addCommas(finishPrice);
-        recordObject[f].finishSheetsPrice = finishPrice;
+        let series = getSolidOrWood(f); // TODO moved this out of the following for loop. Double check that didn't break anything
+        
+        if (recordObject[f].manualSheetQty) { // If the user is inputing manual changes, respect those
+        	recordObject[f].finishSheetsPrices['gr'] = g(`gr-sheets-input-${f}`).value * sheetPrices[getSolidOrWood(f)]['gr'];
+        	recordObject[f].finishSheetsPrices['xl'] = g(`xl-sheets-input-${f}`).value * sheetPrices[getSolidOrWood(f)]['xl'];
+        } else { // Else go through the tabs and calculate the sheet quantity that way
+        	for (let tab = 1; tab <= recordObject[f].visibleTabs; tab++) {
+        	    calculate(series, finIndex, tab);
+        	    let sizeString = recordObject[f].tabs[tab - 1].size == 1 ? 'xl' : 'gr';
+        	    let temp = getValue(`${sizeString}-sheets-input-${f}`);
+        	    temp += recordObject[f].tabs[tab - 1].sheetCountEstimate;
+        	    g(`${sizeString}-sheets-input-${f}`).value = temp;
+        	    recordObject[f].finishSheetsPrices[sizeString] += recordObject[f].tabs[tab - 1].sheetCountEstimate *
+        	        sheetPrices[getSolidOrWood(f)][sizeString];
+        	}
+        }
+        
+        g(`subtotal-${f}`).innerText = addCommas(recordObject[f].finishSheetsPrices['xl'] + recordObject[f].finishSheetsPrices['gr']);
 
-        if (applyReccs && fastenerSystem == 'EF - Wood') {
+        if (applyReccs && fastenerSystem == 'EF') {
             // Set screws in this loop since they are finish-specific
-            g(`cms-${f}-qty`).value = Math.ceil(recordObject[f].screws / screwsOrRivetsPerBox);
+            g(`cms-${f}-qty`).value = Math.ceil(recordObject[f].screws / screwPerBox);
             g(`cms-${f}-total`).innerText = "$" + addCommas(getValue(`cms-${f}-qty`) * parseFloat(g(`screw-rivet-price`).innerText));
         }
     }
     if (applyReccs) {
         // set other accessories here since they are global
+        // CF
         g(`cf-horiz-rail-qty`).value = fastenerSystem === 'CF' ? Math.ceil(globalAccessoriesCount.concealedHorizontalRailFeet / concealedHorizontalRailFeetPer) : "";
         g(`cf-horiz-rail-total`).innerText = fastenerSystem === 'CF' ? "$" + addCommas(getValue(`cf-horiz-rail-qty`) * parseFloat(g(`cf-horiz-rail-price`).innerText)) : "";
         g(`cf-clip-qty`).value = fastenerSystem === 'CF' ? Math.ceil(globalAccessoriesCount.concealedClips) : "";
         g(`cf-clip-total`).innerText = fastenerSystem === 'CF' ? "$" + addCommas(getValue(`cf-clip-qty`) * parseFloat(g(`cf-clip-price`).innerText)) : "";
-        g(`alum-hat-ext-qty`).value = fastenerSystem != 'CF' ? Math.ceil(globalAccessoriesCount.hatExtrusionFeet / hatExtrusionFeetPer) : "";
-        g(`alum-hat-ext-total`).innerText = fastenerSystem != 'CF' ? "$" + addCommas(getValue(`alum-hat-ext-qty`) * parseFloat(g(`alum-hat-ext-price`).innerText)) : "";
-        g(`alum-zee-ext-qty`).value = fastenerSystem != 'CF' ? Math.ceil(globalAccessoriesCount.zeeExtrusionFeet / zeeExtrusionFeetPer) : "";
-        g(`alum-zee-ext-total`).innerText = fastenerSystem != 'CF' ? "$" + addCommas(getValue(`alum-zee-ext-qty`) * parseFloat(g(`alum-zee-ext-price`).innerText)) : "";
-      	g(`screw-sleeves-qty`).value = fastenerSystem === 'EF - Wood' ? Math.ceil(globalAccessoriesCount.totalQuantScrewSleeves / screwSleevesPerBox) : "";
-        g(`screw-sleeves-total`).innerText = fastenerSystem === 'EF - Wood' ? "$" + addCommas(getValue(`screw-sleeves-qty`) * parseFloat(g(`screw-sleeves-price`).innerText)) : "";
         g(`tuf-s-concealed-fastener-qty`).value = fastenerSystem === 'CF' ? Math.ceil(globalAccessoriesCount.tufsFastener / tufsFastenerPerBox) : "";
         g(`tuf-s-concealed-fastener-total`).innerText = fastenerSystem === 'CF' ? "$" + addCommas(getValue(`tuf-s-concealed-fastener-qty`) * parseFloat(g(`tuf-s-concealed-fastener-price`).innerText)) : "";
+        // EF
+        g(`alum-hat-ext-qty`).value = fastenerSystem === 'EF' ? Math.ceil(globalAccessoriesCount.hatExtrusionFeet / hatExtrusionFeetPer) : "";
+        g(`alum-hat-ext-total`).innerText = fastenerSystem === 'EF' ? "$" + addCommas(getValue(`alum-hat-ext-qty`) * parseFloat(g(`alum-hat-ext-price`).innerText)) : "";
+        g(`alum-zee-ext-qty`).value = fastenerSystem === 'EF' ? Math.ceil(globalAccessoriesCount.zeeExtrusionFeet / zeeExtrusionFeetPer) : "";
+        g(`alum-zee-ext-total`).innerText = fastenerSystem === 'EF' ? "$" + addCommas(getValue(`alum-zee-ext-qty`) * parseFloat(g(`alum-zee-ext-price`).innerText)) : "";
+        
 
     }
     //console.log(recordObject);
