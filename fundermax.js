@@ -1,3 +1,9 @@
+/* 11-11-22 notes
+ * Moved add event listener block for size toggles since it will now be specific to each panel profile
+ * Added size attribute to tabs in recordObject. 0 = GR, 1 = XL
+ * Added sheetSizes and sheetPrices data object
+*/
+
 /* 11-10-22 notes
  * Copied over the equitone file and made obvious changes
 */
@@ -98,7 +104,7 @@ window.addEventListener('load', () => {
     }
 
     displayCheckoutPane();
-
+	// TODO make sure this is the actual name of the form
     document.querySelector('[data-name="FastTrack-Fundermax-Order"]').addEventListener('submit', formSubmit);
 
     g('previous-button').addEventListener('click', (event) => {
@@ -113,7 +119,7 @@ window.addEventListener('load', () => {
         displayCheckoutPane();
     });
 
-
+	// TODO add ids to trav's tab template
     calculatorTabHTML = g('calculator-FINISH-TAB').outerHTML;
     g('calculator-FINISH-TAB').style.display = "none";
 
@@ -122,7 +128,7 @@ window.addEventListener('load', () => {
     for (let i = 0; i < getFinishes.length; i++) {
         finishes.push(getFinishes[i].innerText);
     }
-    // Populate recordObject
+   
     for (let finIndex = 0; finIndex < finishes.length; finIndex++) {
         let f = finishes[finIndex];
         // add screws to accessory object array
@@ -137,6 +143,7 @@ window.addEventListener('load', () => {
                 'EF - Wood': true,
             }
         );
+        // Populate recordObject
         recordObject[f] = {
             visibleTabs: 1,
             // ^this is tied to the fact that in our HTML embed, 
@@ -157,6 +164,7 @@ window.addEventListener('load', () => {
                 "horizOrient": 0, // 0 = false = vertical, 1 = true = horizontal
                 "solveForSqft": 0, // 0 = false, 1 = true
                 "grainVertical": 0 // 0 = false, 1 = true
+                "size": 0 // 0 = GR, 1 = XL; TODO make sure this reflects actual start position of checkbox
             };
         }
         // Populate html of tabs
@@ -178,6 +186,8 @@ window.addEventListener('load', () => {
         g(`${f}-remove-tab`).addEventListener('click', (event) => {
             removeTab(finIndex);
         });
+        
+        // TODO adjust this to accomodate two input fields for sheet quantity
         // allow manual changes to sheet count
         g(`sheets-input-${f}`).addEventListener('input', (event) => {
             recordObject[f].manualSheetQty = true;
@@ -232,30 +242,7 @@ window.addEventListener('load', () => {
         calculateAll();
     });
     
-    // TODO build this out, add ids, etc. once trav has toggles made
-    // add listener to sheet size toggle
-    let sizeToggles = document.getElementsByClassName('gr-xl-size-toggle');
-    for (let i = 0; i < sizeToggles.length; i++) {
-       sizeToggles[i].addEventListener('input', (event) => {
-           let id = sizeToggles[i].id;
-           // add these id's, hardcoded since travis shows these
-           let pattern = /gr-xl-size-toggle-([^-]+)-(\d+)/;
-           let finish = id.replace(pattern, "$1");
-           let tab = id.replace(pattern, "$2");
-           
-           // Hide and show the horizontal/vertical divs on the toggle
-           g(`toggle-gr-${finish}-${tab}`).style.display =
-               g(`toggle-gr-${finish}-${tab}`).style.display != "none" ? "none" : "block";
-           g(`togle-xl-${finish}-${tab}`).style.display =
-               g(`toggle-xl-${finish}-${tab}`).style.display != "none" ? "none" : "block";
-               
-        	// TODO may need to also change a size dimensions display somewhere
-        	
-           calculateAll();
-       });
-       continue;
 
-    }
 
     // reset a finish tab when it is exited
 
@@ -334,6 +321,30 @@ window.addEventListener('load', () => {
                 });
                 continue;
             }
+            
+            // TODO build this out, add to tab template, etc. once trav has toggles made
+    		// add listener to sheet size toggle GR-XL
+    		if (inputs[i].id.startsWith('gr-xl-')) {
+    		   inputs[i].addEventListener('input', (event) => {
+    		       let id = inputs[i].id;
+    		       // add these ids to template
+    		       let pattern = /gr-xl-size-toggle-([^-]+)-(\d+)/;
+    		       let finish = id.replace(pattern, "$1");
+    		       let tab = id.replace(pattern, "$2");
+    		       // Set size for this tab
+    		       recordObject[finish].tabs[tab - 1].size = inputs[i].checked ? 1 : 0;
+    		       // Hide and show the horizontal/vertical divs on the toggle
+    		       g(`toggle-gr-${finish}-${tab}`).style.display =
+    		           g(`toggle-gr-${finish}-${tab}`).style.display != "none" ? "none" : "block";
+    		       g(`togle-xl-${finish}-${tab}`).style.display =
+    		           g(`toggle-xl-${finish}-${tab}`).style.display != "none" ? "none" : "block";
+    		           
+    		    	// TODO may need to also change a size dimensions display somewhere
+    		    	
+    		       calculateAll();
+    		   });
+    		   continue;
+    		}
 
         } else if (inputs[i].name == 'Installation-System') {
             inputs[i].addEventListener('input', (event) => {
@@ -379,6 +390,28 @@ let grandTotal = 0;
 const maxVisibleTabs = 5; // this needs to be the same as how many empty divs we have in our calculator embeds
 const maxCheckoutPane = 4; // this is tied to how many "steps" are in the order process, starting with Select Materials
 
+// TODO get sizes from CMS collection
+const sheetSizes = {
+	"gr": {
+		width: "110.25",
+		height: "51.1875",
+	},
+	"xl": {
+		width: "161.375",
+		height: "73",
+	}
+}
+// TODO get prices from CMS collection
+const sheetPrices = {
+	"solids": {
+		"gr": 443,
+		"xl": 927
+	},
+	"woodgrains": {
+		"gr": 465,
+		"xl": 974
+	}
+}
 
 const screwsOrRivetsPerBox = 500;
 const hatExtrusionFeetPer = 10;
@@ -497,11 +530,12 @@ function removeTab(finIndex) {
 function resetCalcTab(f, tab) {
 
     for (const key of Object.keys(recordObject[f].tabs[tab - 1])) {
-        if (key === 'solveForSqft' || key === 'horizOrient' || key === 'grainVertical') continue;
+        if (key === 'solveForSqft' || key === 'horizOrient' || key === 'grainVertical' || key === 'size') continue;
         recordObject[f].tabs[tab - 1][key] = 0;
     }
 
     // reset HTML
+    // TODO add any new fundermax ones. GL vs XL, probably
     g(`sheets-recc-${f}-${tab}`).innerText = "";
     g(`yieldloss-${f}-${tab}`).innerText = "";
     g(`price-${f}`).innerText = "";
@@ -525,7 +559,7 @@ function resetRecordObject() {
         for (let i = 0; i < recordObject[f].tabs.length; i++) {
             for (const key of Object.keys(recordObject[f].tabs[i])) {
                 // don't reset these three
-                if (key === 'solveForSqft' || key === 'horizOrient' || key === 'grainVertical') continue;
+                if (key === 'solveForSqft' || key === 'horizOrient' || key === 'grainVertical' || key === 'size') continue;
                 recordObject[f].tabs[i][key] = 0;
             }
         }
@@ -607,13 +641,14 @@ function calculate(series, finIndex, tab) {
         }
         */
         for (const key of Object.keys(recordObject[f].tabs[tab - 1])) {
-            if (key === 'solveForSqft' || key === 'horizOrient' || key === 'grainVertical') continue;
+            if (key === 'solveForSqft' || key === 'horizOrient' || key === 'grainVertical' || key === 'size') continue;
             recordObject[f].tabs[tab - 1][key] = 0;
         }
         return;
     }
 
     // width = long side, height = short side
+    // TODO adapt this to variable size GR vs XL
     let sheetWidth = getSeriesInfo(series, "width");
     let sheetHeight = getSeriesInfo(series, "height");
     let sheetArea = (sheetWidth * sheetHeight) / 144;
@@ -815,19 +850,18 @@ function calculateAll() {
         let f = finishes[finIndex];
         if (g(`${f}-quantity-selection`).style.display === 'none') continue;
         if (!recordObject[f].manualSheetQty) g(`sheets-input-${f}`).value = 0;
+        let series = letterSeriesMap[f[0]]; // TODO moved this out of the following for loop. Double check that didn't break anything
         for (let tab = 1; tab <= recordObject[f].visibleTabs; tab++) {
-            let series = letterSeriesMap[f[0]];
             calculate(series, finIndex, tab);
-            if (!recordObject[f].manualSheetQty) {
+            if (recordObject[f].manualSheetQty) {
+                finishPrice = g(`sheets-input-${f}`).value * getSeriesInfo(letterSeriesMap[f[0]], "price");
+            } else {
                 let t = getValue(`sheets-input-${f}`);
                 t += recordObject[f].tabs[tab - 1].sheetCountEstimate;
                 g(`sheets-input-${f}`).value = t;
                 finishPrice += recordObject[f].tabs[tab - 1].sheetCountEstimate *
                     getSeriesInfo(letterSeriesMap[f[0]], "price");
-            } else {
-                finishPrice = g(`sheets-input-${f}`).value * getSeriesInfo(letterSeriesMap[f[0]], "price");
             }
-
         }
         g(`price-${f}`).innerText = addCommas(finishPrice);
         recordObject[f].finishSheetsPrice = finishPrice;
